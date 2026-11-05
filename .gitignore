@@ -34,3 +34,16 @@ build/
 
 ### Mac OS ###
 .DS_Store
+
+out/
+bin/
+*.class
+*.jar
+*.war
+*.zip
+*.exe
+!/.mvn/wrapper/maven-wrapper.jar
+/datalake/
+**/configuration.local.json
+**/configuration.local.yaml
+**/configuration.local.yml
