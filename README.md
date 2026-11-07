@@ -6,14 +6,14 @@ reception shifts, including overnight work.
 
 ## Current implementation
 
-This first increment establishes the Maven modules and shared event model. It
-preserves the existing text-file storage and defines the device/parser/publisher
-collaboration. It does not yet provide executable services or user interfaces.
+The Maven modules share an event model and preserve the existing text-file
+storage. The tracking module can simulate a punch from the command line and
+print its JSON message. The network services and user interfaces are pending.
 
 | Module | Current contents | Intended responsibility |
 | --- | --- | --- |
 | `attendance-core` | Validated employee, building and event records; tracking types. | Shared domain types without infrastructure dependencies. |
-| `tracking-service` | Device/parser/publisher ports and `RegisterPresenceUseCase`. | Capture and publish attendance events. |
+| `tracking-service` | Runnable simulation with JSON configuration, input parser and console publisher. | Capture and publish attendance events. |
 | `employee-service` | Maven module declaration. | Employee administration API. |
 | `building-service` | Maven module declaration. | Building administration API. |
 | `employee-admin` | Maven module declaration. | Protected employee administration application. |
@@ -46,8 +46,38 @@ mvn -pl tracking-service -am test
 Tests cover incomplete model data, valid event publication, preventing publication
 after reading/parsing failures, propagating publication failures, preserving
 append-only text storage across reopen, UTC partitioning and filesystem errors.
-They use test doubles and temporary directories; no broker or external services
-are required.
+They also check the complete simulated path for both punch types and reject
+invalid configuration or input without emitting an event. No broker or external
+services are required.
+
+## Run a simulated punch
+
+In IntelliJ IDEA, run `software.ulpgc.attendance.tracking.infrastructure.Main`
+using the `tracking-service` module and the repository root as its working
+directory. Set the program arguments to:
+
+```text
+tracking-service/configuration.example.json employee-001;in
+```
+
+Use `employee-001;out` to simulate a departure. To run from PowerShell with the
+default Maven cache, build from the repository root and use:
+
+```powershell
+mvn -pl tracking-service -am package
+$trackingGson = Join-Path $env:USERPROFILE '.m2/repository/com/google/code/gson/gson/2.15.0/gson-2.15.0.jar'
+$trackingClasspath = "tracking-service/target/classes;attendance-core/target/classes;$trackingGson"
+java -cp $trackingClasspath software.ulpgc.attendance.tracking.infrastructure.Main tracking-service/configuration.example.json 'employee-001;in'
+```
+
+The example configuration supplies the building identifier. To try another
+building, copy it to `tracking-service/configuration.local.json` and pass that
+path instead. The example employee ID is supplied as device input, not loaded
+from the employee service.
+
+The output is one JSON line with the current timestamp. The console publisher
+does not send it to a broker or store it. Invalid configuration or input
+produces an error on standard error and exits with status 1.
 
 ## Backend structure
 
@@ -86,15 +116,15 @@ Constructors reject missing timestamps/types and null, empty or blank identifier
 Employee and building records also require a nonblank name. These checks do not
 prove that an identifier exists in a master service.
 
-The selected external JSON contract will map `ENTRY` to `in` and `EXIT` to `out`:
+The console publisher maps `ENTRY` to `in` and `EXIT` to `out`. Example output:
 
 ```json
 {"ts":"2026-11-05T09:00:00Z","employee":"employee-001","building":"hotel-001","type":"in"}
 ```
 
-This is the target wire format; no JSON serializer or broker adapter is implemented
-in this increment. Later steps must define event identity, source metadata and
-delivery/acceptance semantics before real asynchronous integration.
+Gson handles JSON in the infrastructure layer. The console output uses the target
+message fields; the broker adapter, event identity, source metadata and delivery
+semantics remain pending.
 
 ## Existing text storage
 
