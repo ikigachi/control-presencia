@@ -44,6 +44,7 @@ bin/
 *.exe
 !/.mvn/wrapper/maven-wrapper.jar
 /datalake/
+/employee-service/data/
 **/configuration.local.json
 **/configuration.local.yaml
 **/configuration.local.yml

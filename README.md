@@ -8,13 +8,14 @@ reception shifts, including overnight work.
 
 The Maven modules share an event model and preserve the existing text-file
 storage. The tracking module can simulate a punch from the command line and
-print its JSON message. The network services and user interfaces are pending.
+print its JSON message. The employee API is available locally. The building
+API, user interfaces and broker integration are pending.
 
 | Module | Current contents | Intended responsibility |
 | --- | --- | --- |
 | `attendance-core` | Validated employee, building and event records; tracking types. | Shared domain types without infrastructure dependencies. |
 | `tracking-service` | Runnable simulation with JSON configuration, input parser and console publisher. | Capture and publish attendance events. |
-| `employee-service` | Maven module declaration. | Employee administration API. |
+| `employee-service` | Local HTTP API for employee registration, lookup, listing and deactivation. | Employee administration API. |
 | `building-service` | Maven module declaration. | Building administration API. |
 | `employee-admin` | Maven module declaration. | Protected employee administration application. |
 | `building-admin` | Maven module declaration. | Protected building administration application. |
@@ -81,6 +82,11 @@ produces an error on standard error and exits with status 1.
 
 ## Backend structure
 
+The employee service uses Javalin to route HTTP requests to `EmployeeApi`.
+`EmployeeDirectory` applies the registration and deactivation rules through an
+`EmployeeRepository` port. `JsonEmployeeRepository` persists snapshots to a
+local file. The application and domain do not depend on Javalin or Gson.
+
 Shared model types are in
 `software.ulpgc.attendance.application.domain.model` inside `attendance-core`.
 Module-specific application ports/use cases are separated from infrastructure
@@ -126,6 +132,52 @@ Gson handles JSON in the infrastructure layer. The console output uses the targe
 message fields; the broker adapter, event identity, source metadata and delivery
 semantics remain pending.
 
+## Run the employee service
+
+Build from the repository root. In PowerShell, set a local development token and
+start the executable JAR:
+
+```powershell
+mvn -pl employee-service -am package
+$env:ATTENDANCE_ADMIN_TOKEN = Read-Host -MaskInput 'Local employee API token'
+java -jar employee-service/target/employee-service-1.0-SNAPSHOT-app.jar 8081 employee-service/data/employees.json
+```
+
+The arguments select the port and data file. The service binds to
+`127.0.0.1`. All employee requests require
+`Authorization: Bearer <token>` with the value configured at startup. Keep the
+token out of source control and use fictional employee data. Stop the service
+with Ctrl+C.
+
+| Method and path | Request | Success |
+| --- | --- | --- |
+| `POST /api/employees` | JSON with string fields `id` and `name` | `201` with the new record and a `Location` header |
+| `GET /api/employees` | No body | `200` with all records, including inactive employees |
+| `GET /api/employees/{id}` | No body | `200` with the requested record |
+| `POST /api/employees/{id}/deactivate` | No body | `200` with the inactive record |
+
+Example registration body:
+
+```json
+{"id":"employee-001","name":"Test Employee"}
+```
+
+Responses include `id`, `name`, `active`, `registeredAt` and
+`deactivatedAt`. The timestamps use UTC, and `deactivatedAt` is null for
+active employees. Deactivation keeps the record queryable and preserves the
+first deactivation timestamp if repeated. An existing identifier cannot be
+registered again, even after deactivation.
+
+Errors include `400` for invalid input, `401` for missing or invalid tokens,
+`404` for unknown employees, `409` for duplicate IDs, and `500` if a change
+cannot be saved. These application errors return a JSON `code` and `message`.
+
+The JSON file is loaded at startup. Changes are written to a temporary file and
+replace the previous snapshot atomically; the in-memory state changes only after
+a successful write. Use one service instance per file on a filesystem that
+supports atomic moves. The integration tests exercise the HTTP API and restart
+it against the same temporary data file.
+
 ## Existing text storage
 
 `FileEventStore` has moved to `storer`. `EventStore.save(event)` delegates formatting
@@ -164,8 +216,8 @@ migrated explicitly; changing the extension alone does not convert the data.
 
 Service URLs, broker credentials, building identity and runtime storage settings
 will be loaded from external JSON/YAML configuration. Real credentials and runtime
-datalake files must not be committed. ActiveMQ, HTTP API servers, administrative
-authentication, Docker and Nginx routing are not implemented yet.
+datalake files must not be committed. ActiveMQ, the building and attendance
+APIs, the admin applications, Docker and Nginx routing are not implemented yet.
 
 ## Remaining delivery requirements
 
