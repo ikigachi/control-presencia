@@ -2,9 +2,12 @@ package software.ulpgc.attendance.storer.infrastructure.adapters.output;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import software.ulpgc.attendance.application.domain.model.TrackingEvent;
 import software.ulpgc.attendance.application.domain.model.TrackingType;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -39,6 +42,38 @@ class FileEventStoreTest {
 
         assertTrue(Files.exists(directory.resolve("2026/20261231.log")));
         assertFalse(Files.exists(directory.resolve("2027/20270101.log")));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {";", "\r", "\n"})
+    void rejectsUnsafeIdentifiersWithoutCreatingOrChangingTheLog(String separator) throws IOException {
+        Path root = directory.resolve("store");
+        FileEventStore store = new FileEventStore(root.toFile());
+        Instant timestamp = Instant.parse("2026-11-05T09:00:00Z");
+        var rejected = List.of(
+                new TrackingEvent(timestamp, "employee" + separator + "001", "hotel-001", TrackingType.ENTRY),
+                new TrackingEvent(timestamp, "employee-001", "hotel" + separator + "001", TrackingType.ENTRY)
+        );
+
+        for (TrackingEvent event : rejected)
+            assertThrows(IllegalArgumentException.class, () -> store.save(event));
+        assertFalse(Files.exists(root));
+
+        store.save(new TrackingEvent(timestamp, "employee-001", "hotel-001", TrackingType.ENTRY));
+        Path log = root.resolve("2026/20261105.log");
+        byte[] original = Files.readAllBytes(log);
+        for (TrackingEvent event : rejected)
+            assertThrows(IllegalArgumentException.class, () -> store.save(event));
+        assertArrayEquals(original, Files.readAllBytes(log));
+    }
+
+    @Test
+    void rejectsAnUnsafeEventBeforeWritingToTheProvidedStream() {
+        TrackingEvent event = new TrackingEvent(Instant.EPOCH, "employee-001", "hotel;west", TrackingType.ENTRY);
+        var output = new ByteArrayOutputStream();
+
+        assertThrows(IllegalArgumentException.class, () -> EventWriter.writeEvent(event, output));
+        assertEquals(0, output.size());
     }
 
     @Test

@@ -17,8 +17,9 @@ public class FileEventStore implements EventStore {
 
     @Override
     public void save(TrackingEvent event) throws IOException {
+        String line = EventWriter.formatEvent(event);
         try (OutputStream output = new FileOutputStream(prepareDailyLogFile(event), true)) {
-            EventWriter.writeEvent(event, output);
+            EventWriter.writeLine(line, output);
         }
     }
 

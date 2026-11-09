@@ -180,8 +180,8 @@ it against the same temporary data file.
 
 ## Existing text storage
 
-`FileEventStore` has moved to `storer`. `EventStore.save(event)` delegates formatting
-to `EventWriter.writeEvent(event, output)`. A root supplied as `new File("store")`
+`FileEventStore` has moved to `storer`. `EventStore.save(event)` formats and
+validates the event through `EventWriter` before opening the file. A root supplied as `new File("store")`
 uses the current working directory and writes daily UTC files such as:
 
 ```text
@@ -199,8 +199,10 @@ truncating the file. The storage operation closes its own file stream. The write
 flushes but leaves the caller-owned stream open.
 
 This is compatibility with the previous increment, not the future JSONL datalake.
-The adapter does not validate arbitrary delimiter characters in identifiers,
-coordinate concurrent writers or guarantee transactional/physical disk durability.
+The adapter rejects semicolons, carriage returns and newlines in employee and
+building identifiers. A rejected event does not create or modify a log file.
+The adapter does not coordinate concurrent writers or guarantee transactional
+or physical disk durability.
 
 ## Planned system architecture
 
