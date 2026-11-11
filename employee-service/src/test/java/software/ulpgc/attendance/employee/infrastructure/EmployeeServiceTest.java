@@ -5,6 +5,8 @@ import com.google.gson.JsonParser;
 import io.javalin.Javalin;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import software.ulpgc.attendance.application.domain.model.Employee;
 import software.ulpgc.attendance.employee.application.usecases.EmployeeDirectory;
 import software.ulpgc.attendance.employee.infrastructure.adapters.input.EmployeeApi;
@@ -116,10 +118,46 @@ class EmployeeServiceTest {
     }
 
     @Test
+    void keepsAnEmployeeActiveWhenDeactivationCannotBeSaved() throws IOException {
+        Path data = directory.resolve("employees.json");
+        var repository = new JsonEmployeeRepository(data);
+        var original = new EmployeeDirectory(repository, Clock.fixed(REGISTRATION, ZoneOffset.UTC))
+                .register(new Employee("employee-001", "Test Employee"));
+        Path backup = directory.resolve("original.json");
+        Files.move(data, backup);
+        Files.createDirectory(data);
+        Files.writeString(data.resolve("blocking-file"), "Keep this file");
+        var employees = new EmployeeDirectory(repository, Clock.fixed(DEACTIVATION, ZoneOffset.UTC));
+
+        assertThrows(IOException.class, () -> employees.deactivate("employee-001"));
+        assertEquals(original, employees.find("employee-001"));
+        assertEquals(original, new JsonEmployeeRepository(backup).findById("employee-001").orElseThrow());
+        assertEquals("Keep this file", Files.readString(data.resolve("blocking-file")));
+        try (var files = Files.list(directory)) {
+            assertFalse(files.anyMatch(path -> path.getFileName().toString().endsWith(".tmp")));
+        }
+    }
+
+    @Test
     void rejectsCorruptedStorageWithoutOverwritingIt() throws IOException {
         Path data = Files.writeString(directory.resolve("employees.json"), "{invalid");
         assertThrows(IOException.class, () -> directory(data, REGISTRATION));
         assertEquals("{invalid", Files.readString(data));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "[{\"id\":17,\"name\":\"Test Employee\",\"registeredAt\":\"2026-11-08T09:00:00Z\"}]",
+            "[{\"id\":\"employee-001\",\"name\":true,\"registeredAt\":\"2026-11-08T09:00:00Z\"}]",
+            "[{\"id\":\"employee-001\",\"name\":\"Test Employee\"}]",
+            "[{\"id\":\"employee-001\",\"name\":\"Test Employee\",\"registeredAt\":\"2026-11-08T09:00:00Z\",\"deactivatedAt\":\"2026-11-07T09:00:00Z\"}]",
+            "[null]",
+            "null"
+    })
+    void rejectsInvalidStoredRecordsWithoutChangingTheFile(String contents) throws IOException {
+        Path data = Files.writeString(directory.resolve("employees.json"), contents);
+        assertThrows(IOException.class, () -> directory(data, REGISTRATION));
+        assertEquals(contents, Files.readString(data));
     }
 
     private static Javalin start(Path data, Instant now) throws IOException {

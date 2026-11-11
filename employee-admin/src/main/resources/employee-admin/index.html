@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Employees | Hotel Staff</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/filter.js" defer></script>
+</head>
+<body>
+    <header class="topbar"><div class="shell brand"><span class="mark" aria-hidden="true">HS</span> Hotel Staff</div></header>
+    <main class="shell">
+        <header class="heading">
+            <p class="eyebrow">Staff administration</p>
+            <h1>Employees</h1>
+            <p class="muted">Register employees and manage their active status.</p>
+        </header>
+        <p class="notice success" role="status" {{noticeHidden}}>{{notice}}</p>
+        <p class="notice error" role="alert" {{errorHidden}}>{{error}}</p>
+        <dl class="summary">
+            <div><dt>Total employees</dt><dd>{{total}}</dd></div>
+            <div><dt>Active</dt><dd>{{active}}</dd></div>
+            <div><dt>Inactive</dt><dd>{{inactive}}</dd></div>
+        </dl>
+        <section class="panel" aria-labelledby="register-title">
+            <h2 id="register-title">Register employee</h2>
+            <form class="register" method="post" action="/employees/register">
+                <input type="hidden" name="formToken" value="{{formToken}}">
+                <label for="employee-id">Employee ID
+                    <input id="employee-id" name="id" placeholder="employee-001" value="{{draftId}}" required>
+                </label>
+                <label for="employee-name">Full name
+                    <input id="employee-name" name="name" placeholder="Example Employee" value="{{draftName}}" required>
+                </label>
+                <button type="submit">Register employee</button>
+            </form>
+        </section>
+        <section class="panel directory" aria-labelledby="directory-title">
+            <div class="directory-heading">
+                <h2 id="directory-title">Employee directory</h2>
+                <label id="filter-control" for="employee-filter" hidden>Find an employee
+                    <input id="employee-filter" type="search" placeholder="Search name or ID" autocomplete="off">
+                </label>
+            </div>
+            <div class="table-scroll" tabindex="0" role="region" aria-label="Employee directory table">
+                <table>
+                    <thead>
+                        <tr><th scope="col">Employee</th><th scope="col">Status</th><th scope="col">Registered (UTC)</th><th scope="col">Deactivated (UTC)</th><th scope="col">Action</th></tr>
+                    </thead>
+                    <tbody id="employee-rows">{{rows}}</tbody>
+                </table>
+            </div>
+            <p class="empty" {{emptyHidden}}>No employees to display.</p>
+            <p id="no-matches" class="empty" role="status" hidden>No employees match the search.</p>
+        </section>
+    </main>
+</body>
+</html>

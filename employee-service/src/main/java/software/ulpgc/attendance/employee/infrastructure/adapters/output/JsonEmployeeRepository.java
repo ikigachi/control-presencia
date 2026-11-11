@@ -2,6 +2,8 @@ package software.ulpgc.attendance.employee.infrastructure.adapters.output;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import com.google.gson.Strictness;
 import software.ulpgc.attendance.application.domain.model.Employee;
@@ -69,14 +71,12 @@ public class JsonEmployeeRepository implements EmployeeRepository {
 
         String contents = Files.readString(file, StandardCharsets.UTF_8);
         try {
-            StoredEmployee[] stored = json.fromJson(contents, StoredEmployee[].class);
-            if (stored == null)
+            JsonElement stored = json.fromJson(contents, JsonElement.class);
+            if (stored == null || !stored.isJsonArray())
                 throw new IllegalArgumentException("Expected an array of employees");
 
-            for (StoredEmployee entry : stored) {
-                if (entry == null)
-                    throw new IllegalArgumentException("Employee data contains a null entry");
-                EmployeeRegistration registration = entry.toRegistration();
+            for (JsonElement entry : stored.getAsJsonArray()) {
+                EmployeeRegistration registration = StoredEmployee.parse(entry).toRegistration();
                 if (restored.putIfAbsent(registration.employee().id(), registration) != null)
                     throw new IllegalArgumentException("Employee data contains a duplicate identifier");
             }
@@ -87,6 +87,22 @@ public class JsonEmployeeRepository implements EmployeeRepository {
     }
 
     private record StoredEmployee(String id, String name, String registeredAt, String deactivatedAt) {
+        private static StoredEmployee parse(JsonElement entry) {
+            if (!entry.isJsonObject())
+                throw new IllegalArgumentException("Expected an employee object");
+            JsonObject record = entry.getAsJsonObject();
+            JsonElement deactivatedAt = record.get("deactivatedAt");
+            return new StoredEmployee(text(record, "id"), text(record, "name"), text(record, "registeredAt"),
+                    deactivatedAt == null || deactivatedAt.isJsonNull() ? null : text(record, "deactivatedAt"));
+        }
+
+        private static String text(JsonObject record, String field) {
+            JsonElement value = record.get(field);
+            if (value == null || !value.isJsonPrimitive() || !value.getAsJsonPrimitive().isString())
+                throw new IllegalArgumentException("Stored employee field '" + field + "' must be a string");
+            return value.getAsString();
+        }
+
         private static StoredEmployee from(EmployeeRegistration registration) {
             return new StoredEmployee(registration.employee().id(), registration.employee().name(),
                     registration.registeredAt().toString(),

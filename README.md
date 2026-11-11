@@ -8,8 +8,9 @@ reception shifts, including overnight work.
 
 The Maven modules share an event model and preserve the existing text-file
 storage. The tracking module can simulate a punch from the command line and
-print its JSON message. The employee API is available locally. The building
-API, user interfaces and broker integration are pending.
+print its JSON message. The employee API and its web administration app
+are available locally. The building API, attendance interfaces and broker
+integration are pending.
 
 | Module | Current contents | Intended responsibility |
 | --- | --- | --- |
@@ -17,13 +18,13 @@ API, user interfaces and broker integration are pending.
 | `tracking-service` | Runnable simulation with JSON configuration, input parser and console publisher. | Capture and publish attendance events. |
 | `employee-service` | Local HTTP API for employee registration, lookup, listing and deactivation. | Employee administration API. |
 | `building-service` | Maven module declaration. | Building administration API. |
-| `employee-admin` | Maven module declaration. | Protected employee administration application. |
+| `employee-admin` | Web page for listing, registering and deactivating employees through a Java server. | Protected employee administration application. |
 | `building-admin` | Maven module declaration. | Protected building administration application. |
 | `storer` | Storage port and migrated text-file adapters. | Consume tracking messages and persist events. |
 
 `tracking-service` and `storer` both depend on `attendance-core`; neither depends
-on the other. The admin applications have no Java dependency on service
-implementations: their eventual connection will use documented APIs.
+on the other. The employee admin app communicates with the service through
+its HTTP API and does not depend on its implementation.
 
 ## Build and verification
 
@@ -174,9 +175,58 @@ cannot be saved. These application errors return a JSON `code` and `message`.
 
 The JSON file is loaded at startup. Changes are written to a temporary file and
 replace the previous snapshot atomically; the in-memory state changes only after
-a successful write. Use one service instance per file on a filesystem that
+a successful write. Loading rejects invalid field types, incomplete records,
+duplicate identifiers and deactivation dates before registration without
+changing the file. Use one service instance per file on a filesystem that
 supports atomic moves. The integration tests exercise the HTTP API and restart
 it against the same temporary data file.
+
+## Run employee administration
+
+Start the employee service first. Then open a second PowerShell window in the
+repository root and run:
+
+```powershell
+mvn -pl employee-admin package
+$env:ATTENDANCE_ADMIN_TOKEN = Read-Host -MaskInput 'Same token used by employee-service'
+$env:ATTENDANCE_ADMIN_WEB_PASSWORD = Read-Host -MaskInput 'Password for the web user admin'
+java -jar employee-admin/target/employee-admin-1.0-SNAPSHOT-app.jar http://127.0.0.1:8081 8082
+```
+
+The arguments are the employee service base URL and the web server port. Open
+`http://127.0.0.1:8082/` and sign in as `admin` with the configured web password.
+The API bearer token is used only by the Java processes.
+
+In IntelliJ IDEA, run
+`software.ulpgc.attendance.employeeadmin.infrastructure.Main` in the
+`employee-admin` module. Put `http://127.0.0.1:8081 8082` in **Program
+arguments** and set both variables in **Environment variables**.
+
+The page lists active and inactive employees and their registration and
+deactivation dates. Fill in **Employee ID** and **Full name** to register an
+employee. Use **Deactivate** on an active row to deactivate it while keeping
+its record. The search field filters the rows currently displayed.
+
+`EmployeeAdminConfiguration` reads the launch arguments and environment
+variables; `Main` wires the components and manages startup and shutdown.
+`EmployeeAdminServer` manages the local HTTP server, authentication and a pool
+of four request workers, which it shuts down when closed. A slow API request
+does not hold up all other requests while another worker is available.
+`EmployeeAdminHandler` routes HTTP requests and sends responses;
+`EmployeeForm` decodes and bounds form input. `EmployeeAdminController`
+coordinates listing, registration and deactivation through `EmployeeClient`,
+including form validation, errors and redirects. `HttpEmployeeClient`
+implements that port using the employee API.
+`EmployeeAdminResources` loads the static resources once at startup;
+`EmployeeAdminPage` renders the HTML templates and escapes employee data.
+If registration fails, the submitted ID and name stay in the form so
+they can be corrected. A duplicate registration keeps its conflict status,
+and an unavailable directory is shown without zero counts.
+JavaScript only filters displayed rows; the forms and server operations work
+with JavaScript disabled. Tests cover form submission, authentication, rejected
+form tokens, escaping, invalid API responses and independent requests during
+a slow directory lookup. Controller tests use a substitute `EmployeeClient`
+without HTTP to verify failure messages, retained input and interruption.
 
 ## Existing text storage
 
@@ -219,7 +269,7 @@ migrated explicitly; changing the extension alone does not convert the data.
 Service URLs, broker credentials, building identity and runtime storage settings
 will be loaded from external JSON/YAML configuration. Real credentials and runtime
 datalake files must not be committed. ActiveMQ, the building and attendance
-APIs, the admin applications, Docker and Nginx routing are not implemented yet.
+APIs, building administration, Docker and Nginx routing are not implemented yet.
 
 ## Remaining delivery requirements
 
