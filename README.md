@@ -8,16 +8,16 @@ reception shifts, including overnight work.
 
 The Maven modules share an event model and preserve the existing text-file
 storage. The tracking module can simulate a punch from the command line and
-print its JSON message. The employee API and its web administration app
-are available locally. The building API, attendance interfaces and broker
-integration are pending.
+print its JSON message. The employee API, its web administration app and the
+building API are available locally. Building administration, attendance
+interfaces and broker integration are pending.
 
 | Module | Current contents | Intended responsibility |
 | --- | --- | --- |
 | `attendance-core` | Validated employee, building and event records; tracking types. | Shared domain types without infrastructure dependencies. |
 | `tracking-service` | Runnable simulation with JSON configuration, input parser and console publisher. | Capture and publish attendance events. |
 | `employee-service` | Local HTTP API for employee registration, lookup, listing and deactivation. | Employee administration API. |
-| `building-service` | Maven module declaration. | Building administration API. |
+| `building-service` | Local HTTP API for building registration, lookup, listing and deactivation. | Building administration API. |
 | `employee-admin` | Web page for listing, registering and deactivating employees through a Java server. | Protected employee administration application. |
 | `building-admin` | Maven module declaration. | Protected building administration application. |
 | `storer` | Storage port and migrated text-file adapters. | Consume tracking messages and persist events. |
@@ -228,6 +228,52 @@ form tokens, escaping, invalid API responses and independent requests during
 a slow directory lookup. Controller tests use a substitute `EmployeeClient`
 without HTTP to verify failure messages, retained input and interruption.
 
+## Run the building service
+
+Build from the repository root with `mvn -pl building-service -am package`.
+In PowerShell, set the local administration token and start the executable JAR:
+
+```powershell
+$env:ATTENDANCE_ADMIN_TOKEN = Read-Host -MaskInput 'Local building API token'
+java -jar building-service/target/building-service-1.0-SNAPSHOT-app.jar 8083 building-service/data/buildings.json
+```
+
+In IntelliJ IDEA, run `software.ulpgc.attendance.building.infrastructure.Main`
+in `building-service`. Set the working directory to the repository root, pass
+`8083 building-service/data/buildings.json` as the program arguments and set
+`ATTENDANCE_ADMIN_TOKEN` in the environment variables.
+
+The service listens on `127.0.0.1` and requires
+`Authorization: Bearer <token>` on every request.
+
+| Method and path | Request | Success |
+| --- | --- | --- |
+| `POST /api/buildings` | JSON with string fields `id` and `name` | `201` with the record and its `Location` |
+| `GET /api/buildings` | No body | `200` with all records, including inactive buildings |
+| `GET /api/buildings/{id}` | No body | `200` with the requested record |
+| `POST /api/buildings/{id}/deactivate` | No body | `200` with the inactive record |
+
+A building identifies a physical property. For example, send
+`{"id":"hotel-001","name":"Test Hotel"}` to register a fictional property.
+The ID starts with an ASCII letter or digit and may also contain dots,
+underscores and hyphens. Names must be nonblank.
+
+Each record contains `id`, `name`, `active`, `registeredAt` and
+`deactivatedAt`. Timestamps are UTC. The deactivation timestamp is null
+while the building is active. An inactive building remains available for
+historical lookup. Repeated deactivation preserves the first timestamp
+and registration never reuses an existing ID.
+
+Errors return JSON with `code` and `message`. The API uses `400` for invalid
+input, `401` for missing or invalid tokens, `404` for an unknown building,
+`409` for a duplicate ID and `500` for a failed write. The service loads
+and atomically replaces a JSON snapshot using one service instance per data
+file. A rejected operation leaves the last saved records intact.
+
+Verify the module with `mvn -pl building-service -am test`. The tests cover
+registration, lookup, deactivation, reopening the data file, rejected
+requests and storage failures.
+
 ## Existing text storage
 
 `FileEventStore` has moved to `storer`. `EventStore.save(event)` formats and
@@ -268,8 +314,10 @@ migrated explicitly; changing the extension alone does not convert the data.
 
 Service URLs, broker credentials, building identity and runtime storage settings
 will be loaded from external JSON/YAML configuration. Real credentials and runtime
-datalake files must not be committed. ActiveMQ, the building and attendance
-APIs, building administration, Docker and Nginx routing are not implemented yet.
+datalake files must not be committed. ActiveMQ, the attendance API, building
+administration, Docker and Nginx routing are pending. Tracking still uses
+its configured building ID directly. Validation through the building API
+is a separate integration step.
 
 ## Remaining delivery requirements
 
